@@ -1,0 +1,92 @@
+---
+- hosts: localhost
+  gather_facts: no
+  vars_files:
+   - /home/adamw/ansible/projects/sandbox/keys.yml
+   - /home/adamw/ansible/projects/sandbox/variables.yml  
+  tasks:
+    - name: Create KMS key
+      aws_kms:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        alias: instanceKMSkey
+        description: KMS key to be used for encrypting ebs block devices on instances
+        tags: 
+          Name: "{{ aws_name }}"
+          Owner: "{{ aws_owner }}"
+          Dept: "{{ aws_dept }}"
+          Tool: "{{ aws_tool }}"
+      register: aws_kmskey_info
+
+    - name: Create VPC
+      ec2_vpc_net:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        name: main
+        cidr_block: "{{ aws_vpc_cidr }}" 
+        region: "{{ AWS_REGION }}"
+        tags:
+          Name: "{{ aws_name }}"
+          Owner: "{{ aws_owner }}"
+          Dept: "{{ aws_dept }}"
+          Tool: "{{ aws_tool }}"
+      register: aws_vpc_info
+   
+    - name: Create subnet    
+      ec2_vpc_subnet:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        vpc_id: "{{ aws_vpc_info.vpc.id }}"                   
+        cidr: "{{ aws_subnet_cidr }}"
+        tags:
+          Name: "{{ aws_name }}"
+          Owner: "{{ aws_owner }}"
+          Dept: "{{ aws_dept }}"
+          Tool: "{{ aws_tool }}"
+      register: aws_subnet_info
+   
+    - name: Create internet gateway
+      ec2_vpc_igw:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        vpc_id: "{{ aws_vpc_info.vpc.id }}"
+      register: aws_igw_info
+   
+    - name: Create key pair
+      ec2_key:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        name: InstanceKey
+        key_material: "{{ aws_public_key }}"
+      register: aws_keypair_info
+   
+    - name: Create instance
+      ec2:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        key_name: "{{ aws_keypair_info.key.name }}"
+        instance_type: "{{ aws_instance_type }}"
+        image: "{{ aws_ami }}"
+        wait: yes
+        count: "{{ aws_count }}"
+        vpc_subnet_id: "{{ aws_subnet_info.subnet.id }}"
+        instance_tags:
+          Name: "{{ aws_name }}"
+          Owner: "{{ aws_owner }}"
+          Dept: "{{ aws_dept }}"
+          Tool: "{{ aws_tool }}"
+      register: aws_instance_info
+
+    - name: Create EIP
+      ec2_eip:
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        region: "{{ AWS_REGION }}"
+        device_id: "{{ aws_instance_info.instances[0].id }}"
+      register: aws_eip_info
